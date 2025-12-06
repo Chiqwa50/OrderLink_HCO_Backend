@@ -1,0 +1,284 @@
+// This is your Prisma schema file,
+// learn more about it in the docs: https://pris.ly/d/prisma-schema
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum UserRole {
+  DEPARTMENT
+  WAREHOUSE
+  DRIVER
+  ADMIN
+}
+
+enum OrderStatus {
+  PENDING      // قيد المراجعة
+  APPROVED     // تم الموافقة
+  PREPARING    // قيد التجهيز
+  READY        // جاهز للتوصيل
+  DELIVERED    // تم التسليم
+  REJECTED     // مرفوض
+}
+
+enum PreparationAction {
+  ITEM_CHECKED       // تم فحص المادة
+  QUANTITY_ADJUSTED  // تم تعديل الكمية
+  ITEM_UNAVAILABLE   // المادة غير متوفرة
+  ITEM_AVAILABLE     // المادة متوفرة
+  ORDER_APPROVED     // تم قبول الطلب
+  ORDER_REJECTED     // تم رفض الطلب
+  ORDER_COMPLETED    // اكتمل التجهيز
+  ORDER_DELIVERED    // تم تسليم الطلب
+  STATUS_CHANGED     // تم تغيير حالة الطلب
+}
+
+enum WarehouseType {
+  PHARMACEUTICAL  // دوائي
+  LOGISTICS      // لوجستي
+  EQUIPMENT      // أجهزة
+  MEDICAL        // طبي
+  GENERAL        // عام
+}
+
+model Department {
+  id          String   @id @default(uuid())
+  name        String   @unique
+  code        String   @unique // رمز القسم
+  description String?
+  isActive    Boolean  @default(true)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  // Relations
+  users                 User[]
+  orders                Order[]                  @relation("DepartmentOrders")
+  departmentSupervisors DepartmentSupervisor[]   // المشرفون على هذا القسم
+  departmentWarehouses  DepartmentWarehouse[]    // المستودعات المرتبطة بهذا القسم
+
+  @@map("departments")
+}
+
+model Warehouse {
+  id          String        @id @default(uuid())
+  name        String        @unique
+  code        String        @unique // رمز المستودع
+  type        WarehouseType
+  description String?
+  location    String?       // موقع المستودع
+  isActive    Boolean       @default(true)
+  createdAt   DateTime      @default(now())
+  updatedAt   DateTime      @updatedAt
+
+  // Relations
+  warehouseSupervisors WarehouseSupervisor[] // المشرفون على هذا المستودع
+  items                Item[]                @relation("WarehouseItems") // المواد في هذا المستودع
+  departmentWarehouses DepartmentWarehouse[] // الأقسام المرتبطة بهذا المستودع
+  orders               Order[]               @relation("WarehouseOrders") // الطلبات الموجهة لهذا المستودع
+  preparationLogs      OrderPreparationLog[]
+
+  @@map("warehouses")
+}
+
+model User {
+  id           String   @id @default(uuid())
+  phone        String   @unique
+  password     String
+  name         String
+  role         UserRole
+  departmentId String?  // معرف القسم للمستخدمين من نوع DEPARTMENT (deprecated - use departmentSupervisors)
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  // Relations
+  department            Department?             @relation(fields: [departmentId], references: [id])
+  createdOrders         Order[]                 @relation("CreatedOrders") // الطلبات التي أنشأها المستخدم
+  createdItems          Item[]                  @relation("CreatedItems")  // المواد التي أنشأها المستخدم
+  orderHistories        OrderHistory[]
+  departmentSupervisors DepartmentSupervisor[]  // العلاقة مع الأقسام المشرف عليها
+  warehouseSupervisors  WarehouseSupervisor[]   // العلاقة مع المستودعات المشرف عليها
+  preparationLogs       OrderPreparationLog[]
+  restrictions          UserRestriction?        // قيود المستخدم
+
+  @@map("users")
+}
+
+// جدول العلاقة بين مشرفي الأقسام والأقسام (Many-to-Many)
+model DepartmentSupervisor {
+  id           String   @id @default(uuid())
+  userId       String   // معرف المستخدم (المشرف)
+  departmentId String   // معرف القسم
+  createdAt    DateTime @default(now())
+
+  // Relations
+  user       User       @relation(fields: [userId], references: [id], onDelete: Cascade)
+  department Department @relation(fields: [departmentId], references: [id], onDelete: Cascade)
+
+  // منع التكرار: نفس المستخدم لا يمكن أن يكون مشرفاً على نفس القسم مرتين
+  @@unique([userId, departmentId])
+  @@map("department_supervisors")
+}
+
+// جدول العلاقة بين مشرفي المستودعات والمستودعات (Many-to-Many)
+model WarehouseSupervisor {
+  id          String   @id @default(uuid())
+  userId      String   // معرف المستخدم (المشرف)
+  warehouseId String?  // معرف المستودع (null إذا كان مشرف عام)
+  isGlobal    Boolean  @default(false) // هل هو مشرف عام على جميع المستودعات؟
+  createdAt   DateTime @default(now())
+
+  // Relations
+  user      User       @relation(fields: [userId], references: [id], onDelete: Cascade)
+  warehouse Warehouse? @relation(fields: [warehouseId], references: [id], onDelete: Cascade)
+
+  // منع التكرار: نفس المستخدم لا يمكن أن يكون مشرفاً على نفس المستودع مرتين
+  @@unique([userId, warehouseId])
+  @@map("warehouse_supervisors")
+}
+
+model Order {
+  id           String      @id @default(uuid())
+  orderNumber  String      @unique // رقم الطلب التلقائي
+  departmentId String
+  warehouseId  String      // معرف المستودع المسؤول عن هذا الطلب
+  createdBy    String      // معرف المستخدم الذي أنشأ الطلب
+  status       OrderStatus @default(PENDING)
+  notes        String?     // ملاحظات عامة على الطلب
+  deliveredAt  DateTime?   // تاريخ التسليم (يتم تعيينه عند تغيير الحالة إلى DELIVERED)
+  createdAt    DateTime    @default(now())
+  updatedAt    DateTime    @updatedAt
+
+  // Relations
+  department      Department              @relation("DepartmentOrders", fields: [departmentId], references: [id])
+  warehouse       Warehouse               @relation("WarehouseOrders", fields: [warehouseId], references: [id])
+  creator         User                    @relation("CreatedOrders", fields: [createdBy], references: [id])
+  items           OrderItem[]
+  history         OrderHistory[]
+  preparationLogs OrderPreparationLog[]
+
+  @@map("orders")
+}
+
+model OrderItem {
+  id       String  @id @default(uuid())
+  orderId  String
+  itemName String  // اسم المادة
+  quantity Int     // الكمية
+  unit     String  @default("piece") // الوحدة: piece, box, carton, kg, liter
+  notes    String? // ملاحظات خاصة بالمادة
+
+  // Relations
+  order Order @relation(fields: [orderId], references: [id], onDelete: Cascade)
+
+  @@map("order_items")
+}
+
+model OrderHistory {
+  id        String      @id @default(uuid())
+  orderId   String
+  status    OrderStatus // الحالة الجديدة
+  changedBy String      // معرف المستخدم الذي قام بالتغيير
+  notes     String?     // ملاحظات على التغيير
+  timestamp DateTime    @default(now())
+
+  // Relations
+  order Order @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  user  User  @relation(fields: [changedBy], references: [id])
+
+  @@map("order_history")
+}
+
+model Item {
+  id          String   @id @default(uuid())
+  name        String
+  description String?
+  sku         String   @unique // Stock Keeping Unit
+  quantity    Int      @default(0)
+  category    String?
+  unit        String?  // e.g., "box", "piece", "kg"
+  warehouseId String   // معرف المستودع (إجباري)
+  isActive    Boolean  @default(true) // حالة المادة: نشطة أو غير نشطة
+  createdBy   String?  // معرف المستخدم الذي أنشأ المادة (اختياري للمواد الموجودة مسبقاً)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  // Relations
+  creator     User?      @relation("CreatedItems", fields: [createdBy], references: [id])
+  warehouse   Warehouse  @relation("WarehouseItems", fields: [warehouseId], references: [id])
+
+  @@map("items")
+}
+
+model OrderPreparationLog {
+  id           String            @id @default(uuid())
+  orderId      String            // معرف الطلب
+  warehouseId  String            // معرف المستودع
+  preparedBy   String            // معرف مسؤول المستودع
+  itemName     String?           // اسم المادة (null للإجراءات العامة)
+  action       PreparationAction // نوع الإجراء
+  requestedQty Int?              // الكمية المطلوبة
+  availableQty Int?              // الكمية المتوفرة
+  notes        String?           // ملاحظات
+  timestamp    DateTime          @default(now())
+
+  // Relations
+  order     Order     @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  warehouse Warehouse @relation(fields: [warehouseId], references: [id])
+  user      User      @relation(fields: [preparedBy], references: [id])
+
+  @@map("order_preparation_logs")
+}
+
+// جدول العلاقة بين الأقسام والمستودعات (Many-to-Many)
+model DepartmentWarehouse {
+  id          String   @id @default(uuid())
+  departmentId String   // معرف القسم
+  warehouseId String   // معرف المستودع
+  priority    Int      @default(1) // أولوية المستودع للقسم (1 = الأعلى)
+  isPrimary   Boolean  @default(false) // هل هو المستودع الرئيسي؟
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  // Relations
+  department Department @relation(fields: [departmentId], references: [id], onDelete: Cascade)
+  warehouse  Warehouse  @relation(fields: [warehouseId], references: [id], onDelete: Cascade)
+
+  // منع التكرار: نفس القسم لا يمكن ربطه بنفس المستودع مرتين
+  @@unique([departmentId, warehouseId])
+  @@map("department_warehouses")
+}
+
+// جدول قيود المستخدمين (User Restrictions)
+model UserRestriction {
+  id     String   @id @default(uuid())
+  userId String   @unique
+  role   UserRole
+
+  // قيود مسؤول القسم (Department Supervisor)
+  orderRateLimit       Int?     // عدد الطلبات المسموح بها
+  orderRatePeriodHours Int?     // الفترة الزمنية بالساعات
+  canViewAllOrders     Boolean  @default(false) // هل يرى جميع طلبيات القسم
+  canReceiveReadyOrders Boolean @default(false) // هل يمكنه استلام الطلبيات الجاهزة بنفسه
+
+  // قيود مسؤول المستودع (Warehouse Supervisor) - للتوسع المستقبلي
+  canViewPendingOrders Boolean @default(false) // هل يمكنه رؤية الطلبات قيد المراجعة
+  canApproveOrders Boolean @default(true) // هل يمكنه الموافقة على الطلبات
+  canRejectOrders  Boolean @default(true) // هل يمكنه رفض الطلبات
+
+  // قيود السائق (Driver) - للتوسع المستقبلي
+  maxDeliveriesPerDay Int? // الحد الأقصى للتوصيلات في اليوم
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  // Relations
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@map("user_restrictions")
+}
+

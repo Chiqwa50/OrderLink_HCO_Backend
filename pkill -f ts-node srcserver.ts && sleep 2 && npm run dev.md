@@ -1,0 +1,1 @@
+pkill -f "ts-node src/server.ts" && sleep 2 && npm run dev
