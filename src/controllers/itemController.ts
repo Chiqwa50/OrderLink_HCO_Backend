@@ -6,7 +6,7 @@ const itemService = new ItemService();
 export const createItem = async (req: Request, res: Response) => {
     try {
         // نفترض أن middleware المصادقة يضيف بيانات المستخدم إلى req.user
-        const userId = (req as any).user?.userId;
+        const userId = (req as any).user?.id;
 
         const itemData = {
             ...req.body,
@@ -74,7 +74,11 @@ export const deleteItem = async (req: Request, res: Response) => {
         res.json({ message: 'تم حذف المادة بنجاح' });
     } catch (error: any) {
         console.error('Error deleting item:', error);
-        res.status(500).json({ error: 'فشل حذف المادة', details: error.message });
+        if (error.message.includes('لا يمكن حذف هذه المادة')) {
+            res.status(409).json({ error: error.message });
+        } else {
+            res.status(500).json({ error: 'فشل حذف المادة', details: error.message });
+        }
     }
 };
 

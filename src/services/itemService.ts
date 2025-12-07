@@ -140,6 +140,26 @@ export class ItemService {
      * حذف مادة
      */
     async deleteItem(id: string): Promise<Item> {
+        // التحقق من وجود المادة أولاً
+        const item = await prisma.item.findUnique({
+            where: { id },
+        });
+
+        if (!item) {
+            throw new Error('المادة غير موجودة');
+        }
+
+        // التحقق من استخدام المادة في أي طلبات
+        const orderCount = await prisma.orderItem.count({
+            where: {
+                itemName: item.name,
+            },
+        });
+
+        if (orderCount > 0) {
+            throw new Error('لا يمكن حذف هذه المادة لأنها مستخدمة في طلبات سابقة. يمكنك تعطيلها بدلاً من ذلك.');
+        }
+
         return await prisma.item.delete({
             where: { id },
         });
