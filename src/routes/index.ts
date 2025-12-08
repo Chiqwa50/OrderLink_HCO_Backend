@@ -1,5 +1,5 @@
 import { Router } from 'express';
-import { register, login, getMe } from '../controllers/authController';
+import { register, login, getMe, updateMe } from '../controllers/authController';
 import {
     createOrder,
     getOrders,
@@ -31,6 +31,7 @@ const router = Router();
 router.post('/auth/register', register);
 router.post('/auth/login', login);
 router.get('/auth/me', authenticateToken, getMe);
+router.put('/auth/me', authenticateToken, updateMe);
 
 // ==================== User Routes ====================
 router.use('/users', userRoutes);

@@ -162,6 +162,76 @@ export const getMe = async (req: Request, res: Response): Promise<void> => {
         res.json({ user });
     } catch (error) {
         console.error('GetMe error:', error);
-        res.status(500).json({ error: 'حدث خطأ أثناء جلب بيانات المستخدم' });
+    }
+};
+
+export const updateMe = async (req: Request, res: Response): Promise<void> => {
+    try {
+        const authReq = req as AuthRequest;
+        const userId = authReq.user?.id;
+        const { name, currentPassword, newPassword } = req.body;
+
+        if (!userId) {
+            res.status(401).json({ error: 'غير مصرح' });
+            return;
+        }
+
+        const user = await prisma.user.findUnique({
+            where: { id: userId },
+        });
+
+        if (!user) {
+            res.status(404).json({ error: 'المستخدم غير موجود' });
+            return;
+        }
+
+        const updateData: any = {};
+
+        if (name) {
+            updateData.name = name;
+        }
+
+        if (newPassword) {
+            if (!currentPassword) {
+                res.status(400).json({ error: 'يرجى إدخال كلمة المرور الحالية' });
+                return;
+            }
+
+            const isValidPassword = await bcrypt.compare(currentPassword, user.password);
+            if (!isValidPassword) {
+                res.status(400).json({ error: 'كلمة المرور الحالية غير صحيحة' });
+                return;
+            }
+
+            updateData.password = await bcrypt.hash(newPassword, SALT_ROUNDS);
+        }
+
+        const updatedUser = await prisma.user.update({
+            where: { id: userId },
+            data: updateData,
+            select: {
+                id: true,
+                phone: true,
+                name: true,
+                role: true,
+                departmentId: true,
+                department: {
+                    select: {
+                        id: true,
+                        name: true,
+                        code: true,
+                    },
+                },
+                createdAt: true,
+            },
+        });
+
+        res.json({
+            message: 'تم تحديث البيانات بنجاح',
+            user: updatedUser,
+        });
+    } catch (error) {
+        console.error('UpdateMe error:', error);
+        res.status(500).json({ error: 'حدث خطأ أثناء تحديث البيانات' });
     }
 };
