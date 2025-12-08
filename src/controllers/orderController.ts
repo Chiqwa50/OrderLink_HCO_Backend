@@ -308,19 +308,27 @@ export const updateOrderStatus = async (req: Request, res: Response): Promise<vo
             }
         }
 
+        // إعداد بيانات التحديث
+        const updateData: any = {
+            status,
+            history: {
+                create: {
+                    status,
+                    changedBy: userId,
+                    notes: notes || `تم تغيير الحالة إلى ${status}`,
+                },
+            },
+        };
+
+        // إذا تم تغيير الحالة إلى DELIVERED، قم بتعيين deliveredAt
+        if (status === OrderStatus.DELIVERED) {
+            updateData.deliveredAt = new Date();
+        }
+
         // تحديث الطلب وإضافة سجل التغيير
         const updatedOrder = await prisma.order.update({
             where: { id },
-            data: {
-                status,
-                history: {
-                    create: {
-                        status,
-                        changedBy: userId,
-                        notes: notes || `تم تغيير الحالة إلى ${status}`,
-                    },
-                },
-            },
+            data: updateData,
             include: {
                 items: true,
                 department: {
@@ -499,6 +507,32 @@ export const updateOrder = async (req: Request, res: Response): Promise<void> =>
             data: updateData,
             include: {
                 items: true,
+                preparationLogs: {
+                    where: {
+                        action: {
+                            in: ['ITEM_AVAILABLE', 'ITEM_UNAVAILABLE'],
+                        },
+                    },
+                    select: {
+                        id: true,
+                        itemName: true,
+                        action: true,
+                    },
+                },
+                history: {
+                    include: {
+                        user: {
+                            select: {
+                                id: true,
+                                name: true,
+                                role: true,
+                            },
+                        },
+                    },
+                    orderBy: {
+                        timestamp: 'desc',
+                    },
+                },
                 department: {
                     select: {
                         id: true,

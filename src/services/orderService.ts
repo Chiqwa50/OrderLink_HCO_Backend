@@ -355,6 +355,20 @@ export class OrderService {
                         action: true,
                     },
                 },
+                history: {
+                    include: {
+                        user: {
+                            select: {
+                                id: true,
+                                name: true,
+                                role: true,
+                            },
+                        },
+                    },
+                    orderBy: {
+                        timestamp: 'desc',
+                    },
+                },
             },
             orderBy: {
                 createdAt: 'desc',
