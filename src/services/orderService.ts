@@ -180,49 +180,72 @@ export class OrderService {
         const createdOrders: Order[] = [];
 
         for (const distributedOrder of distributedOrders) {
-            const orderNumber = await this.generateOrderNumber();
+            let retries = 3;
+            while (retries > 0) {
+                try {
+                    const orderNumber = await this.generateOrderNumber();
 
-            const order = await prisma.order.create({
-                data: {
-                    orderNumber,
-                    departmentId: data.departmentId,
-                    warehouseId: distributedOrder.warehouseId,
-                    createdBy: data.createdBy,
-                    notes: data.notes
-                        ? `${data.notes} (موزع تلقائياً - ${distributedOrder.warehouseName})`
-                        : `موزع تلقائياً إلى ${distributedOrder.warehouseName}`,
-                    status: OrderStatus.PENDING,
-                    items: {
-                        create: distributedOrder.items,
-                    },
-                    history: {
-                        create: {
+                    const order = await prisma.order.create({
+                        data: {
+                            orderNumber,
+                            departmentId: data.departmentId,
+                            warehouseId: distributedOrder.warehouseId,
+                            createdBy: data.createdBy,
+                            notes: data.notes
+                                ? `${data.notes} (موزع تلقائياً - ${distributedOrder.warehouseName})`
+                                : `موزع تلقائياً إلى ${distributedOrder.warehouseName}`,
                             status: OrderStatus.PENDING,
-                            changedBy: data.createdBy,
-                            notes: `تم إنشاء الطلب وتوجيهه إلى ${distributedOrder.warehouseName}`,
+                            items: {
+                                create: distributedOrder.items,
+                            },
+                            history: {
+                                create: {
+                                    status: OrderStatus.PENDING,
+                                    changedBy: data.createdBy,
+                                    notes: `تم إنشاء الطلب وتوجيهه إلى ${distributedOrder.warehouseName}`,
+                                },
+                            },
                         },
-                    },
-                },
-                include: {
-                    items: true,
-                    department: {
-                        select: {
-                            id: true,
-                            name: true,
-                            code: true,
+                        include: {
+                            items: true,
+                            department: {
+                                select: {
+                                    id: true,
+                                    name: true,
+                                    code: true,
+                                },
+                            },
+                            warehouse: {
+                                select: {
+                                    id: true,
+                                    name: true,
+                                    code: true,
+                                },
+                            },
                         },
-                    },
-                    warehouse: {
-                        select: {
-                            id: true,
-                            name: true,
-                            code: true,
-                        },
-                    },
-                },
-            });
+                    });
 
-            createdOrders.push(order);
+                    createdOrders.push(order);
+                    break; // Success, exit retry loop
+                } catch (error: any) {
+                    // Check for unique constraint violation on orderNumber
+                    if (
+                        error.code === 'P2002' &&
+                        error.meta?.target?.includes('orderNumber')
+                    ) {
+                        retries--;
+                        if (retries === 0) {
+                            throw new Error(
+                                'فشل في إنشاء رقم طلب فريد بعد عدة محاولات. الرجاء المحاولة مرة أخرى.'
+                            );
+                        }
+                        // Wait a small random amount of time before retrying to reduce collision probability
+                        await new Promise(resolve => setTimeout(resolve, Math.random() * 100 + 50));
+                        continue;
+                    }
+                    throw error; // Re-throw other errors
+                }
+            }
         }
 
         return createdOrders;
