@@ -4,6 +4,7 @@ import prisma from '../config/database';
 import { getOrderTemplate } from '../templates/orderTemplate';
 
 export const generateOrderPDF = async (orderId: string, res: Response): Promise<void> => {
+    let browser;
     try {
         // جلب بيانات الطلب
         const order = await prisma.order.findUnique({
@@ -40,17 +41,25 @@ export const generateOrderPDF = async (orderId: string, res: Response): Promise<
         // إعداد HTML
         const htmlContent = getOrderTemplate(order);
 
-        // إطلاق المتصفح
-        const browser = await puppeteer.launch({
+        // إطلاق المتصفح مع خيارات محسنة للأداء
+        browser = await puppeteer.launch({
             headless: true,
-            args: ['--no-sandbox', '--disable-setuid-sandbox', '--disable-dev-shm-usage'],
+            args: [
+                '--no-sandbox',
+                '--disable-setuid-sandbox',
+                '--disable-dev-shm-usage',
+                '--disable-gpu',
+                '--disable-extensions',
+                '--no-zygote',
+            ],
         });
 
         const page = await browser.newPage();
 
-        // تعيين المحتوى
+        // تعيين المحتوى مع انتظار أقل صرامة لتجنب المهلة
         await page.setContent(htmlContent, {
-            waitUntil: 'networkidle0', // انتظار تحميل الخطوط والموارد
+            waitUntil: 'load', // ننتظر تحميل الصفحة والموارد الأساسية فقط
+            timeout: 30000, // مهلة 30 ثانية
         });
 
         // توليد PDF
@@ -64,8 +73,6 @@ export const generateOrderPDF = async (orderId: string, res: Response): Promise<
                 left: '20px',
             },
         });
-
-        await browser.close();
 
         // إرسال الاستجابة
         res.setHeader('Content-Type', 'application/pdf');
@@ -81,6 +88,11 @@ export const generateOrderPDF = async (orderId: string, res: Response): Promise<
         console.error('Generate PDF error:', error);
         if (!res.headersSent) {
             res.status(500).json({ error: 'حدث خطأ أثناء توليد PDF' });
+        }
+    } finally {
+        // إغلاق المتصفح دائماً لتجنب استهلاك الذاكرة
+        if (browser) {
+            await browser.close();
         }
     }
 };
