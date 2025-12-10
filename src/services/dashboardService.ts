@@ -253,6 +253,137 @@ class DashboardService {
             percentage: Math.round((item._count.status / totalOrders) * 100 * 10) / 10,
         }));
     }
+
+    /**
+     * الحصول على أفضل موظفي المستودعات بناءً على سرعة التجهيز
+     * @param limit عدد الموظفين (افتراضي: 5)
+     * يتم جمع جميع طلبات الموظف من جميع المستودعات في بطاقة واحدة
+     */
+    async getTopWarehouseUsers(limit: number = 5): Promise<Array<{
+        userId: string;
+        userName: string;
+        warehousesLabel: string; // "مستودع دوائي، طبي" أو "جميع المستودعات"
+        completedOrders: number;
+        avgPreparationTime: number; // بالدقائق
+    }>> {
+        // جلب جميع الطلبات المكتملة مع سجلات التجهيز
+        const completedOrders = await prisma.order.findMany({
+            where: {
+                status: {
+                    in: ['READY', 'DELIVERED']
+                }
+            },
+            include: {
+                preparationLogs: {
+                    orderBy: {
+                        timestamp: 'asc'
+                    }
+                }
+            }
+        });
+
+        // تجميع البيانات حسب الموظف فقط (جمع جميع المستودعات)
+        const userStats = new Map<string, {
+            userId: string;
+            userName: string;
+            totalTime: number; // بالمللي ثانية
+            completedOrders: number;
+        }>();
+
+        for (const order of completedOrders) {
+            if (order.preparationLogs.length < 2) continue;
+
+            // البحث عن أول إجراء (بداية التجهيز) وآخر إجراء (اكتمال التجهيز)
+            const firstLog = order.preparationLogs.find(log =>
+                log.action === 'ITEM_CHECKED' || log.action === 'ITEM_AVAILABLE'
+            );
+            const completionLog = order.preparationLogs.find(log =>
+                log.action === 'ORDER_COMPLETED'
+            );
+
+            if (!firstLog || !completionLog) continue;
+
+            // حساب الفرق الزمني
+            const prepTime = completionLog.timestamp.getTime() - firstLog.timestamp.getTime();
+
+            // استخدام الموظف الذي أكمل الطلب
+            const userId = completionLog.preparedBy;
+
+            if (!userStats.has(userId)) {
+                // جلب اسم الموظف
+                const user = await prisma.user.findUnique({
+                    where: { id: userId },
+                    select: { name: true }
+                });
+
+                if (!user) continue;
+
+                userStats.set(userId, {
+                    userId,
+                    userName: user.name,
+                    totalTime: 0,
+                    completedOrders: 0
+                });
+            }
+
+            const stats = userStats.get(userId)!;
+            stats.totalTime += prepTime;
+            stats.completedOrders += 1;
+        }
+
+        // حساب المتوسطات وترتيب النتائج
+        const sortedUsers = Array.from(userStats.values())
+            .filter(stat => stat.completedOrders > 0)
+            .map(stat => ({
+                userId: stat.userId,
+                userName: stat.userName,
+                completedOrders: stat.completedOrders,
+                avgPreparationTime: Math.round((stat.totalTime / stat.completedOrders) / 60000) // تحويل إلى دقائق
+            }))
+            .sort((a, b) => a.avgPreparationTime - b.avgPreparationTime) // الأسرع أولاً
+            .slice(0, limit);
+
+        // جلب صلاحيات المستودعات لكل موظف
+        const results = await Promise.all(
+            sortedUsers.map(async (user) => {
+                const warehouseSupervisors = await prisma.warehouseSupervisor.findMany({
+                    where: { userId: user.userId },
+                    include: {
+                        warehouse: {
+                            select: { name: true }
+                        }
+                    }
+                });
+
+                let warehousesLabel = '';
+
+                // التحقق من وجود مشرف عام على جميع المستودعات
+                const isGlobalSupervisor = warehouseSupervisors.some(ws => ws.isGlobal);
+
+                if (isGlobalSupervisor) {
+                    warehousesLabel = 'جميع المستودعات';
+                } else if (warehouseSupervisors.length > 0) {
+                    // جمع أسماء المستودعات
+                    const warehouseNames = warehouseSupervisors
+                        .filter(ws => ws.warehouse)
+                        .map(ws => ws.warehouse!.name);
+                    warehousesLabel = warehouseNames.join('، ');
+                } else {
+                    warehousesLabel = 'غير محدد';
+                }
+
+                return {
+                    userId: user.userId,
+                    userName: user.userName,
+                    warehousesLabel,
+                    completedOrders: user.completedOrders,
+                    avgPreparationTime: user.avgPreparationTime
+                };
+            })
+        );
+
+        return results;
+    }
 }
 
 export const dashboardService = new DashboardService();

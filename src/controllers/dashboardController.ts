@@ -22,8 +22,8 @@ export const getOrdersTimeline = async (req: Request, res: Response): Promise<vo
         const days = req.query.days ? parseInt(req.query.days as string) : 7;
 
         // التحقق من صحة القيمة
-        if (isNaN(days) || days < 1 || days > 90) {
-            res.status(400).json({ error: 'عدد الأيام يجب أن يكون بين 1 و 90' });
+        if (isNaN(days) || days < 1 || days > 365) {
+            res.status(400).json({ error: 'عدد الأيام يجب أن يكون بين 1 و 365' });
             return;
         }
 
@@ -87,5 +87,26 @@ export const getOrderStatusDistribution = async (req: Request, res: Response): P
     } catch (error) {
         console.error('Get order status distribution error:', error);
         res.status(500).json({ error: 'حدث خطأ أثناء جلب توزيع حالات الطلبات' });
+    }
+};
+
+/**
+ * الحصول على أفضل موظفي المستودعات
+ */
+export const getTopWarehouseUsers = async (req: Request, res: Response): Promise<void> => {
+    try {
+        const limit = req.query.limit ? parseInt(req.query.limit as string) : 5;
+
+        // التحقق من صحة القيمة
+        if (isNaN(limit) || limit < 1 || limit > 20) {
+            res.status(400).json({ error: 'الحد الأقصى يجب أن يكون بين 1 و 20' });
+            return;
+        }
+
+        const users = await dashboardService.getTopWarehouseUsers(limit);
+        res.json({ users, limit });
+    } catch (error) {
+        console.error('Get top warehouse users error:', error);
+        res.status(500).json({ error: 'حدث خطأ أثناء جلب أفضل موظفي المستودعات' });
     }
 };

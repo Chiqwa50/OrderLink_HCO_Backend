@@ -6,6 +6,7 @@ import {
     getDepartmentActivity,
     getTopItems,
     getOrderStatusDistribution,
+    getTopWarehouseUsers,
 } from '../controllers/dashboardController';
 
 const router = Router();
@@ -27,5 +28,8 @@ router.get('/top-items', getTopItems);
 
 // GET /api/dashboard/status-distribution - توزيع حالات الطلبات
 router.get('/status-distribution', getOrderStatusDistribution);
+
+// GET /api/dashboard/top-warehouse-users?limit=5 - أفضل موظفي المستودعات
+router.get('/top-warehouse-users', getTopWarehouseUsers);
 
 export default router;
