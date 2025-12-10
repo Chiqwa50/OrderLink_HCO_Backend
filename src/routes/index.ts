@@ -23,6 +23,7 @@ import itemRoutes from './itemRoutes';
 import departmentRoutes from './departmentRoutes';
 import warehouseRoutes from './warehouseRoutes';
 import userRestrictionRoutes from './userRestrictionRoutes';
+import dashboardRoutes from './dashboardRoutes';
 
 const router = Router();
 
@@ -47,6 +48,9 @@ router.use('/departments', departmentRoutes);
 
 // ==================== Warehouse Routes ====================
 router.use('/warehouses', warehouseRoutes);
+
+// ==================== Dashboard Routes ====================
+router.use('/dashboard', dashboardRoutes);
 
 // ==================== Order Routes ====================
 // إنشاء طلب جديد (الأقسام فقط)
