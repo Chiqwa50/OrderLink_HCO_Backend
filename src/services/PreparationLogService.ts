@@ -248,6 +248,115 @@ export class PreparationLogService {
             where: { orderId },
         });
     }
+    /**
+     * جلب المواد غير المتوفرة مع الفلترة
+     */
+    async getUnavailableItems(filters: {
+        dateFrom?: Date;
+        dateTo?: Date;
+        category?: string;
+        warehouseId?: string;
+        sortBy?: string;
+        sortOrder?: 'asc' | 'desc';
+        page?: number;
+        limit?: number;
+    }) {
+        const whereClause: any = {
+            action: 'ITEM_UNAVAILABLE',
+        };
+
+        // Date Filter
+        if (filters.dateFrom || filters.dateTo) {
+            whereClause.timestamp = {};
+            if (filters.dateFrom) {
+                whereClause.timestamp.gte = filters.dateFrom;
+            }
+            if (filters.dateTo) {
+                whereClause.timestamp.lte = filters.dateTo;
+            }
+        }
+
+        // Warehouse Filter
+        if (filters.warehouseId) {
+            whereClause.warehouseId = filters.warehouseId;
+        }
+
+        // Category Filter
+        if (filters.category) {
+            // Find items in this category first
+            const items = await prisma.item.findMany({
+                where: { category: filters.category },
+                select: { name: true },
+            });
+            const itemNames = items.map(i => i.name);
+            whereClause.itemName = { in: itemNames };
+        }
+
+        // Sorting
+        let orderBy: any = { timestamp: 'desc' }; // Default
+        if (filters.sortBy) {
+            const direction = filters.sortOrder || 'asc';
+            switch (filters.sortBy) {
+                case 'itemName':
+                    orderBy = { itemName: direction };
+                    break;
+                case 'warehouse':
+                    orderBy = { warehouse: { name: direction } };
+                    break;
+                case 'order':
+                    orderBy = { order: { orderNumber: direction } };
+                    break;
+                case 'user':
+                    orderBy = { user: { name: direction } };
+                    break;
+                case 'date':
+                    orderBy = { timestamp: direction };
+                    break;
+            }
+        }
+
+        // Pagination
+        const page = filters.page || 1;
+        const limit = filters.limit || 10;
+        const skip = (page - 1) * limit;
+
+        const [logs, total] = await Promise.all([
+            prisma.orderPreparationLog.findMany({
+                where: whereClause,
+                include: {
+                    order: {
+                        select: {
+                            id: true,
+                            orderNumber: true,
+                        },
+                    },
+                    warehouse: {
+                        select: {
+                            id: true,
+                            name: true,
+                        },
+                    },
+                    user: {
+                        select: {
+                            id: true,
+                            name: true,
+                        },
+                    },
+                },
+                orderBy: orderBy,
+                skip,
+                take: limit,
+            }),
+            prisma.orderPreparationLog.count({ where: whereClause }),
+        ]);
+
+        return {
+            logs,
+            total,
+            page,
+            totalPages: Math.ceil(total / limit),
+        };
+    }
 }
 
 export const preparationLogService = new PreparationLogService();

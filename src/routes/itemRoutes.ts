@@ -9,6 +9,7 @@ import {
     getUnits,
     getItemsForDepartment,
     getItemsByWarehouse,
+    getUnavailableItems,
 } from '../controllers/itemController';
 import { authenticateToken, authorizeRoles } from '../middleware/auth';
 import { UserRole } from '@prisma/client';
@@ -56,5 +57,8 @@ router.get('/department/:departmentId', authenticateToken, getItemsForDepartment
 
 // جلب المواد حسب المستودع
 router.get('/warehouse/:warehouseId', authenticateToken, getItemsByWarehouse);
+
+// جلب سجل المواد غير المتوفرة
+router.get('/unavailable/logs', authenticateToken, getUnavailableItems);
 
 export default router;

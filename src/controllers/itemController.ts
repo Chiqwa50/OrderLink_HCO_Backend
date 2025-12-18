@@ -133,3 +133,32 @@ export const getItemsByWarehouse = async (req: Request, res: Response) => {
         res.status(500).json({ error: 'فشل جلب المواد', details: error.message });
     }
 };
+/**
+ * جلب المواد غير المتوفرة (سجل التجهيز)
+ */
+import { preparationLogService } from '../services/PreparationLogService';
+
+export const getUnavailableItems = async (req: Request, res: Response) => {
+    try {
+        console.log('Fetching unavailable items with params:', req.query);
+        const { dateFrom, dateTo, category, warehouseId, sortBy, sortOrder, page, limit } = req.query;
+
+        const filters = {
+            dateFrom: dateFrom ? new Date(dateFrom as string) : undefined,
+            dateTo: dateTo ? new Date(dateTo as string) : undefined,
+            category: category as string,
+            warehouseId: warehouseId as string,
+            sortBy: sortBy as string,
+            sortOrder: sortOrder as 'asc' | 'desc',
+            page: page ? parseInt(page as string) : 1,
+            limit: limit ? parseInt(limit as string) : 10,
+        };
+
+        const result = await preparationLogService.getUnavailableItems(filters);
+        console.log('Service result:', JSON.stringify(result, null, 2));
+        res.json(result);
+    } catch (error: any) {
+        console.error('Error fetching unavailable items:', error);
+        res.status(500).json({ error: 'فشل جلب سجل المواد غير المتوفرة', details: error.message });
+    }
+};
