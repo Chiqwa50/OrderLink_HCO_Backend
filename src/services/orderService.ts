@@ -263,6 +263,7 @@ export class OrderService {
         createdBy?: string;
         dateFrom?: string;
         dateTo?: string;
+        limit?: number;
     }): Promise<Order[]> {
         const whereClause: any = {};
 
@@ -342,6 +343,7 @@ export class OrderService {
 
         const orders = await prisma.order.findMany({
             where: whereClause,
+            take: filters.limit, // تطبيق الحد الأقصى إذا وجد
             include: {
                 items: true,
                 department: {

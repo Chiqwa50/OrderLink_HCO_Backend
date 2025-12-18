@@ -118,6 +118,12 @@ export const getOrders = async (req: Request, res: Response): Promise<void> => {
             filters.departmentId = queryDepartmentId;
         }
 
+        // تحديد عدد النتائج (Limit)
+        const { limit } = req.query;
+        if (limit) {
+            filters.limit = Number(limit);
+        }
+
         const orders = await orderService.getOrders(filters);
 
         res.json({ orders });
